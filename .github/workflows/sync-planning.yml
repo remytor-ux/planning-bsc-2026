@@ -4,7 +4,7 @@ on:
   schedule:
     # Toutes les 30 minutes. Ajuste la fréquence si besoin (attention : GitHub
     # peut retarder légèrement les cron sur les dépôts gratuits en cas de charge).
-    - cron: "*/30 * * * *"
+       - cron: "0 * * * *"
   workflow_dispatch: {}  # permet de le lancer manuellement depuis l'onglet Actions
 
 permissions:
