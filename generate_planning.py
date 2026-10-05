@@ -220,25 +220,29 @@ def build_data(xlsx_path):
     return data
 
 
+# Personnes ajoutées au sélecteur alors qu'elles ne figurent pas dans le tableau horaire
+# (le menu ne propose que l'équipe médicale : tableau horaire + cette liste).
+EXTRA_TEAM = {"adel": "ADEL"}
+
+
 def build_people(data):
-    """Liste des personnes pour le sélecteur : clé -> {label, main, count}.
-    main = présent dans le tableau horaire (équipe médicale), sinon interne/autre."""
+    """Liste des personnes proposées dans le sélecteur : clé -> {label, main, count}.
+    Équipe médicale uniquement : noms du tableau horaire + EXTRA_TEAM."""
     people = {}
     for month in data.values():
         for h in month["hours"]:
             if h.get("key"):
                 people.setdefault(h["key"], {"label": h["nom"].upper(), "main": True, "count": 0})
-                people[h["key"]]["main"] = True
+    for key, label in EXTRA_TEAM.items():
+        people.setdefault(key, {"label": label, "main": True, "count": 0})
     for month in data.values():
         for day in month["days"]:
             for cell in day["cells"].values():
                 if not cell:
                     continue
                 for key in cell.get("names", []):
-                    if key not in people:
-                        label = NAME_DISPLAY.get(key, key.title())
-                        people[key] = {"label": label, "main": False, "count": 0}
-                    people[key]["count"] += 1
+                    if key in people:
+                        people[key]["count"] += 1
     return people
 
 
