@@ -9,8 +9,10 @@ Usage :
     python3 generate_planning_v2.py chemin/vers/BSC_Planning_2026V2.xlsx dossier_sortie/
 """
 
+import re
 import sys
 import json
+import unicodedata
 import openpyxl
 from pathlib import Path
 from datetime import datetime
@@ -60,6 +62,49 @@ def is_red_fill(cell):
     return False
 
 
+
+# ---------------------------------------------------------------------------
+# Reconnaissance des noms dans les cases du planning (pour le sélecteur de médecin)
+# Les cases sont en texte libre : "adrien/IMAD", "TODY J AFZAL N", "hach", etc.
+# Les variantes d'orthographe se règlent ici, en une ligne par variante.
+# ---------------------------------------------------------------------------
+# variante (minuscules, sans accent) -> nom retenu (minuscules, sans accent)
+NAME_ALIASES = {
+    "hach": "hachimi", "hachim": "hachimi", "hchij": "hachimi",
+    "kanche": "kantche",
+    "rodrigues": "rodrigue",
+    "lolaj": "lola",
+    "nesrinej": "nesrine",
+    "sid": "sid ahmed", "ahmed": "sid ahmed",
+    "remy": "torregrossa",   # Dr Torregrossa écrit parfois "remy" dans les cases
+}
+# mots qui ne sont pas des noms de personnes
+NAME_STOPWORDS = {
+    "jour", "nuit", "bloc", "usc", "interne", "pas", "journee", "evc", "la",
+    "uh", "am", "pm",
+}
+# libellés avec accents pour l'affichage (nom normalisé -> libellé)
+NAME_DISPLAY = {"stephane": "Stéphane", "chloe": "Chloé"}
+
+
+def _norm(text):
+    text = unicodedata.normalize("NFD", str(text))
+    text = "".join(c for c in text if unicodedata.category(c) != "Mn")
+    return text.lower()
+
+
+def names_in(text):
+    """Liste (sans doublon) des personnes citées dans un texte de case."""
+    found = []
+    for tok in re.findall(r"[a-z]+", _norm(text)):
+        tok = NAME_ALIASES.get(tok, tok)
+        if len(tok) < 3 or tok in NAME_STOPWORDS:
+            continue
+        if tok not in found:
+            found.append(tok)
+    return found
+
+
 def parse_month_sheet(ws):
     # --- Colonnes journalières : lues dynamiquement depuis la ligne d'en-têtes (row 3)
     # et les regroupements de la ligne 2 (LIGNE 1 / 12H / LIGNE 2 / AUTRES / UHCD...),
@@ -103,7 +148,8 @@ def parse_month_sheet(ws):
         for dc in day_columns:
             cell = ws.cell(row=r, column=dc["col"])
             if cell.value:
-                entry["cells"][dc["col"]] = {"val": str(cell.value).strip(), "vacant": False}
+                val = str(cell.value).strip()
+                entry["cells"][dc["col"]] = {"val": val, "vacant": False, "names": names_in(val)}
             elif is_red_fill(cell):
                 entry["cells"][dc["col"]] = {"val": None, "vacant": True}
             else:
@@ -143,6 +189,8 @@ def parse_month_sheet(ws):
                 continue
             blanks_in_a_row = 0
             row = {"nom": str(name).strip()}
+            _k = names_in(name)
+            row["key"] = _k[0] if _k else None
             for col, h in local_headers:
                 v = ws.cell(row=rr, column=col).value
                 if isinstance(v, float):
@@ -172,6 +220,28 @@ def build_data(xlsx_path):
     return data
 
 
+def build_people(data):
+    """Liste des personnes pour le sélecteur : clé -> {label, main, count}.
+    main = présent dans le tableau horaire (équipe médicale), sinon interne/autre."""
+    people = {}
+    for month in data.values():
+        for h in month["hours"]:
+            if h.get("key"):
+                people.setdefault(h["key"], {"label": h["nom"].upper(), "main": True, "count": 0})
+                people[h["key"]]["main"] = True
+    for month in data.values():
+        for day in month["days"]:
+            for cell in day["cells"].values():
+                if not cell:
+                    continue
+                for key in cell.get("names", []):
+                    if key not in people:
+                        label = NAME_DISPLAY.get(key, key.title())
+                        people[key] = {"label": label, "main": False, "count": 0}
+                    people[key]["count"] += 1
+    return people
+
+
 HTML_TEMPLATE = """<!DOCTYPE html>
 <html lang="fr">
 <head>
@@ -192,11 +262,12 @@ HTML_TEMPLATE = """<!DOCTYPE html>
   }
   * { box-sizing: border-box; }
   body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif; background: var(--bg); color: var(--text); }
-  header { background: var(--navy); color: #fff; padding: 14px 18px; position: sticky; top: 0; z-index: 20; box-shadow: 0 2px 6px rgba(0,0,0,0.15); }
+  header { background: var(--navy); color: #fff; padding: 14px 18px; box-shadow: 0 2px 6px rgba(0,0,0,0.15); }
   header h1 { margin: 0; font-size: 17px; font-weight: 600; }
   header .sub { font-size: 12px; opacity: 0.85; margin-top: 2px; }
   header .updated { font-size: 11px; opacity: 0.7; margin-top: 4px; }
-  nav { display: flex; overflow-x: auto; background: #fff; border-bottom: 1px solid var(--border); position: sticky; top: 64px; z-index: 19; -webkit-overflow-scrolling: touch; }
+  #stickyTop { position: sticky; top: 0; z-index: 20; background: #fff; box-shadow: 0 2px 6px rgba(0,0,0,0.12); }
+  nav { display: flex; overflow-x: auto; background: #fff; border-bottom: 1px solid var(--border); -webkit-overflow-scrolling: touch; }
   nav button { flex: 0 0 auto; padding: 9px 14px; background: none; border: none; font-size: 12.5px; font-weight: 600; color: var(--muted); cursor: pointer; border-bottom: 3px solid transparent; white-space: nowrap; }
   nav button.active { color: var(--navy); border-bottom-color: var(--amber); }
   main { padding: 10px; max-width: 100%; overflow-x: auto; }
@@ -220,6 +291,18 @@ HTML_TEMPLATE = """<!DOCTYPE html>
   .hours-table td.nom { text-align: left; font-weight: 600; }
   .hours-table td.delta-pos { color: #1E6B3A; font-weight: 600; }
   .hours-table td.delta-neg { color: var(--red); font-weight: 600; }
+
+  /* --- Sélecteur de médecin --- */
+  #filterBar { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 10px; padding: 8px 12px; background: #F7F8FA; border-bottom: 1px solid var(--border); }
+  #filterBar label { font-size: 12px; font-weight: 600; color: var(--navy); }
+  #docSelect { font-size: 14px; padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px; background: #fff; color: var(--text); min-width: 190px; max-width: 100%; }
+  #clearSel { font-size: 12px; padding: 6px 10px; border: 1px solid var(--border); border-radius: 6px; background: #fff; color: var(--navy); cursor: pointer; }
+  #selCount { font-size: 12.5px; color: var(--text); font-weight: 600; }
+  body.has-sel tbody tr[data-names]:not(.sel-hit) { opacity: 0.38; }
+  tr.sel-hit td { background: #FFF1BF !important; }
+  tr.sel-hit td.jour-cell, tr.sel-hit td.date-cell { background: #F2B705 !important; color: #1D2430; font-weight: 700; box-shadow: inset 5px 0 0 var(--navy) !important; }
+  .poste.sel-chip { box-shadow: 0 0 0 2px #fff, 0 0 0 4px var(--navy); font-weight: 700; }
+  .hours-table tr.sel-hours-row td { background: #FFF1BF; font-weight: 700; }
   footer { text-align: center; font-size: 11px; color: var(--muted); padding: 18px; }
 </style>
 </head>
@@ -229,13 +312,24 @@ HTML_TEMPLATE = """<!DOCTYPE html>
   <div class="sub">CH Bagnols-sur-Cèze — lecture seule</div>
   <div class="updated">Dernière mise à jour : __GENERATED_AT__</div>
 </header>
-<nav id="monthNav"></nav>
+<div id="stickyTop">
+  <nav id="monthNav"></nav>
+  <div id="filterBar">
+    <label for="docSelect">Médecin</label>
+    <select id="docSelect"><option value="">— Tous —</option></select>
+    <button id="clearSel" type="button" hidden>✕ Effacer</button>
+    <span id="selCount"></span>
+  </div>
+</div>
 <main id="monthContainer"></main>
 <footer>Généré automatiquement depuis BSC_Planning_2026V2.xlsx — contactez Dr Torregrossa pour toute correction.</footer>
 
 <script>
 const DATA = __DATA_JSON__;
 const HOURS_HEADERS = __HOURS_HEADERS_JSON__;
+const PEOPLE = __PEOPLE_JSON__;
+let selected = "";
+const MONTH_FR = {FEVRIER: "Février", AOUT: "Août", DECEMBRE: "Décembre"};
 
 const nav = document.getElementById("monthNav");
 const container = document.getElementById("monthContainer");
@@ -257,7 +351,7 @@ function groupSpans(dayColumns) {
 
 months.forEach((month, idx) => {
   const btn = document.createElement("button");
-  btn.textContent = month.charAt(0) + month.slice(1).toLowerCase();
+  btn.textContent = monthLabel(month);
   btn.dataset.month = month;
   if (idx === 0) btn.classList.add("active");
   btn.addEventListener("click", () => showMonth(month));
@@ -291,6 +385,9 @@ months.forEach((month, idx) => {
   DATA[month].days.forEach(day => {
     const tr = document.createElement("tr");
     const hasVacant = Object.values(day.cells).some(c => c && c.vacant);
+    const dayNames = [];
+    Object.values(day.cells).forEach(c => { if (c && c.names) c.names.forEach(n => { if (!dayNames.includes(n)) dayNames.push(n); }); });
+    tr.dataset.names = dayNames.join("|");
     if (hasVacant) {
       tr.className = "row-vacant";
     } else if (day.jour === "Samedi" || day.jour === "Dimanche") {
@@ -300,7 +397,7 @@ months.forEach((month, idx) => {
     dayColumns.forEach(c => {
       const cell = day.cells[c.col];
       if (cell && cell.val) {
-        rowHtml += `<td><span class="poste" style="background:${c.color}">${cell.val}</span></td>`;
+        rowHtml += `<td><span class="poste" data-names="${(cell.names || []).join("|")}" style="background:${c.color}">${cell.val}</span></td>`;
       } else if (cell && cell.vacant) {
         rowHtml += `<td><span class="poste vacant">⚠ Vacant</span></td>`;
       } else {
@@ -332,6 +429,7 @@ months.forEach((month, idx) => {
     const htbody = document.createElement("tbody");
     DATA[month].hours.forEach(row => {
       const tr = document.createElement("tr");
+      if (row.key) tr.dataset.key = row.key;
       let rowHtml = `<td class="nom">${row.nom}</td>`;
       monthHeaders.slice(1).forEach(h => {
         let v = row[h];
@@ -351,10 +449,63 @@ months.forEach((month, idx) => {
   container.appendChild(section);
 });
 
+let currentMonth = months[0];
+
 function showMonth(month) {
+  currentMonth = month;
   document.querySelectorAll("#monthNav button").forEach(b => b.classList.toggle("active", b.dataset.month === month));
   document.querySelectorAll(".month").forEach(s => s.classList.toggle("active", s.id === "month-" + month));
+  updateCount();
 }
+
+function monthLabel(m) { return MONTH_FR[m] || (m.charAt(0) + m.slice(1).toLowerCase()); }
+
+function updateCount() {
+  const el = document.getElementById("selCount");
+  if (!selected) { el.textContent = ""; return; }
+  const n = DATA[currentMonth].days.filter(d =>
+    Object.values(d.cells).some(c => c && c.names && c.names.includes(selected))).length;
+  el.textContent = n === 0
+    ? "Aucun poste en " + monthLabel(currentMonth)
+    : n + (n > 1 ? " jours" : " jour") + " en " + monthLabel(currentMonth);
+}
+
+function applySelection() {
+  document.body.classList.toggle("has-sel", !!selected);
+  document.querySelectorAll("tbody tr[data-names]").forEach(tr => {
+    const hit = !!selected && tr.dataset.names.split("|").includes(selected);
+    tr.classList.toggle("sel-hit", hit);
+    tr.querySelectorAll(".poste[data-names]").forEach(ch =>
+      ch.classList.toggle("sel-chip", !!selected && ch.dataset.names.split("|").includes(selected)));
+  });
+  document.querySelectorAll(".hours-table tbody tr").forEach(tr =>
+    tr.classList.toggle("sel-hours-row", !!selected && tr.dataset.key === selected));
+  document.getElementById("clearSel").hidden = !selected;
+  document.getElementById("docSelect").value = selected;
+  updateCount();
+  try { history.replaceState(null, "", selected ? "#med=" + encodeURIComponent(selected) : location.pathname + location.search); } catch (e) {}
+}
+
+(function initSelector() {
+  const sel = document.getElementById("docSelect");
+  const byLabel = (a, b) => PEOPLE[a].label.localeCompare(PEOPLE[b].label, "fr");
+  const groups = [
+    ["Équipe médicale", Object.keys(PEOPLE).filter(k => PEOPLE[k].main).sort(byLabel)],
+    ["Internes / autres", Object.keys(PEOPLE).filter(k => !PEOPLE[k].main).sort(byLabel)],
+  ];
+  groups.forEach(([title, keys]) => {
+    if (!keys.length) return;
+    const og = document.createElement("optgroup");
+    og.label = title;
+    keys.forEach(k => { const o = document.createElement("option"); o.value = k; o.textContent = PEOPLE[k].label; og.appendChild(o); });
+    sel.appendChild(og);
+  });
+  sel.addEventListener("change", () => { selected = sel.value; applySelection(); });
+  document.getElementById("clearSel").addEventListener("click", () => { selected = ""; applySelection(); });
+  const m = location.hash.match(/^#med=(.+)$/);
+  if (m && PEOPLE[decodeURIComponent(m[1])]) selected = decodeURIComponent(m[1]);
+  applySelection();
+})();
 </script>
 </body>
 </html>
@@ -373,6 +524,7 @@ def main():
     html = HTML_TEMPLATE
     html = html.replace("__DATA_JSON__", json.dumps(data, ensure_ascii=False))
     html = html.replace("__HOURS_HEADERS_JSON__", json.dumps([], ensure_ascii=False))
+    html = html.replace("__PEOPLE_JSON__", json.dumps(build_people(data), ensure_ascii=False))
     html = html.replace("__GENERATED_AT__", datetime.now().strftime("%d/%m/%Y %H:%M"))
 
     out_file = out_dir / "index.html"
