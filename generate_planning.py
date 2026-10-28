@@ -204,9 +204,156 @@ def parse_month_sheet(ws):
     return days, day_columns, hours, headers_out
 
 
+# ---------------------------------------------------------------------------
+# Récapitulatifs par quadrimestre (heures + CA), comme dans le fichier Excel :
+# ils figurent en bas du DERNIER mois de chaque quadrimestre (AVRIL, AOUT,
+# DECEMBRE) ; le bilan annuel des CA est celui de DECEMBRE.
+# Les colonnes ne sont pas au même endroit d'un onglet à l'autre : on repère les
+# tableaux par leurs en-têtes ("A faire / Fait / Delta" et "A prendre / Pris / Rest").
+# ---------------------------------------------------------------------------
+QUADS = [
+    ("AVRIL", "Q1", "Janvier – Avril"),
+    ("AOUT", "Q2", "Mai – Août"),
+    ("DECEMBRE", "Q3", "Septembre – Décembre"),
+]
+
+
+def _is_num(v):
+    return isinstance(v, (int, float)) and not isinstance(v, bool)
+
+
+def _txt(v):
+    return str(v).strip() if isinstance(v, str) and v.strip() else None
+
+
+def parse_recap_hours(ws):
+    """Récap horaire du quadrimestre : colonnes 'A faire / Fait / Delta' (colonnes A à E)."""
+    hdr = None
+    for r in range(1, ws.max_row + 1):
+        for c in range(1, 6):
+            trio = (_txt(ws.cell(r, c).value), _txt(ws.cell(r, c + 1).value), _txt(ws.cell(r, c + 2).value))
+            if trio == ("A faire", "Fait", "Delta"):
+                hdr = (r, c)  # on garde le dernier trouvé (le récap est sous le tableau du mois)
+    if not hdr:
+        return []
+    hr, c = hdr
+    rows, blanks, rr = [], 0, hr + 1
+    while blanks < 3 and rr <= ws.max_row and rr < hr + 80:
+        texts = [_txt(ws.cell(rr, col).value) for col in range(1, c)]
+        texts = [t for t in texts if t]
+        a_faire = ws.cell(rr, c).value
+        if texts and _is_num(a_faire):
+            nom = texts[-1]
+            note = " ".join(texts[:-1])
+            fait = ws.cell(rr, c + 1).value
+            delta = ws.cell(rr, c + 2).value
+            delta24 = ws.cell(rr, c + 3).value
+            k = names_in(nom)
+            rows.append({
+                "nom": nom,
+                "key": k[0] if k else None,
+                "note": note,
+                "a_faire": round(a_faire, 1),
+                "fait": round(fait, 1) if _is_num(fait) else None,
+                "delta": round(delta, 1) if _is_num(delta) else None,
+                "delta24": round(delta24, 2) if _is_num(delta24) else None,
+            })
+            blanks = 0
+        else:
+            blanks += 1
+        rr += 1
+    return rows
+
+
+def parse_recap_ca(ws):
+    """Tableau CA cumulé depuis janvier : colonnes '% / A prendre / Pris / Rest'."""
+    hdr = None
+    for r in range(1, ws.max_row + 1):
+        for c in range(3, 20):
+            trio = (_txt(ws.cell(r, c).value), _txt(ws.cell(r, c + 1).value), _txt(ws.cell(r, c + 2).value))
+            if trio == ("A prendre", "Pris", "Rest"):
+                hdr = (r, c)
+    if not hdr:
+        return []
+    hr, c = hdr
+    rows, blanks, rr = [], 0, hr + 1
+    while blanks < 3 and rr <= ws.max_row and rr < hr + 80:
+        nom = _txt(ws.cell(rr, c - 2).value)
+        pris = ws.cell(rr, c + 1).value
+        if nom and _is_num(pris):
+            pct = ws.cell(rr, c - 1).value
+            a_prendre = ws.cell(rr, c).value
+            rest = ws.cell(rr, c + 2).value
+            rows.append({
+                "nom": nom,
+                "pct": round(pct, 1) if _is_num(pct) else None,
+                "a_prendre": round(a_prendre, 1) if _is_num(a_prendre) else None,
+                "pris_cumul": round(pris, 1),
+                "rest": round(rest, 1) if _is_num(rest) else None,
+            })
+            blanks = 0
+        else:
+            blanks += 1
+        rr += 1
+    return rows
+
+
+def build_recaps(wb):
+    """{ 'AVRIL': {...}, 'AOUT': {...}, 'DECEMBRE': {...} } : récap heures + CA par quadrimestre.
+    Le 'Pris' de l'Excel est cumulé depuis janvier : CA du quad = cumul - cumul du quad précédent."""
+    raw = {}
+    for sheet, quad, periode in QUADS:
+        if sheet not in wb.sheetnames:
+            continue
+        ws = wb[sheet]
+        raw[sheet] = {
+            "hours": parse_recap_hours(ws),
+            "ca": {r["nom"].upper(): r for r in parse_recap_ca(ws)},
+            "ca_order": [r["nom"] for r in parse_recap_ca(ws)],
+        }
+
+    out = {}
+    for idx, (sheet, quad, periode) in enumerate(QUADS):
+        if sheet not in raw:
+            continue
+        hours = raw[sheet]["hours"]
+        ca_rows = []
+        quads_done = [q for s, q, _ in QUADS[: idx + 1] if s in raw]
+        for nom in raw[sheet]["ca_order"]:
+            cur = raw[sheet]["ca"][nom.upper()]
+            per_quad, prev = [], 0.0
+            for s, q, _ in QUADS[: idx + 1]:
+                if s not in raw:
+                    continue
+                cum = raw[s]["ca"].get(nom.upper(), {}).get("pris_cumul", 0.0)
+                per_quad.append(round(cum - prev, 1))
+                prev = cum
+            k = names_in(nom)
+            ca_rows.append({
+                "nom": nom,
+                "key": k[0] if k else None,
+                "pct": cur["pct"],
+                "a_prendre": cur["a_prendre"],
+                "quads": per_quad,
+                "total": cur["pris_cumul"],
+                "rest": cur["rest"],
+            })
+        if hours or ca_rows:
+            out[sheet] = {
+                "quad": quad,
+                "periode": periode,
+                "annual": sheet == "DECEMBRE",
+                "quads": quads_done,
+                "hours": hours,
+                "ca": ca_rows,
+            }
+    return out
+
+
 def build_data(xlsx_path):
     wb = openpyxl.load_workbook(xlsx_path, data_only=True)
     data = {}
+    recaps = build_recaps(wb)
     for name in MOIS_ORDRE:
         if name not in wb.sheetnames:
             continue
@@ -216,6 +363,7 @@ def build_data(xlsx_path):
             "columns": day_columns,
             "hours": hours,
             "hours_headers": hours_headers,
+            "recap": recaps.get(name),
         }
     return data
 
@@ -293,8 +441,15 @@ HTML_TEMPLATE = """<!DOCTYPE html>
   h2.month-title { font-size: 14px; color: var(--navy); margin: 4px 4px 8px; }
   h3.section-title { font-size: 13px; color: var(--navy); margin: 4px 4px 8px; }
   .hours-table td.nom { text-align: left; font-weight: 600; }
-  .hours-table td.delta-pos { color: #1E6B3A; font-weight: 600; }
+  .hours-table td.delta-pos { color: var(--blue); font-weight: 600; }
   .hours-table td.delta-neg { color: var(--red); font-weight: 600; }
+  .hours-table td.num { font-variant-numeric: tabular-nums; }
+  .hours-table td.note { text-align: left; color: var(--muted); font-size: 11px; white-space: normal; }
+  .hours-table td.total { font-weight: 700; background: #F3F5F9; }
+  .recap-block { margin: 6px 0 22px; border-top: 3px solid var(--amber); padding-top: 10px; }
+  .recap-block h2.recap-title { font-size: 14px; color: var(--navy); margin: 0 4px 10px; }
+  .recap-block .hours-table { min-width: 0; }
+  .recap-block .hours-table thead th { position: static; }
 
   /* --- Sélecteur de médecin --- */
   #filterBar { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 10px; padding: 8px 12px; background: #F7F8FA; border-bottom: 1px solid var(--border); }
@@ -450,8 +605,78 @@ months.forEach((month, idx) => {
     section.appendChild(wrap2);
   }
 
+  if (DATA[month].recap) renderRecap(section, DATA[month].recap);
+
   container.appendChild(section);
 });
+
+// --- Récapitulatif de quadrimestre (heures + CA), affiché sous le dernier mois du quad ---
+function fmtNum(v) { return (v === null || v === undefined) ? "" : v; }
+
+function buildTable(headers, rowsHtml) {
+  const wrap = document.createElement("div");
+  wrap.className = "table-wrap";
+  const t = document.createElement("table");
+  t.className = "hours-table";
+  t.innerHTML = "<thead><tr>" + headers.map(h => `<th>${h}</th>`).join("") + "</tr></thead>" +
+                "<tbody>" + rowsHtml.join("") + "</tbody>";
+  wrap.appendChild(t);
+  return wrap;
+}
+
+function signClass(v) { return (typeof v === "number") ? (v < 0 ? "delta-neg" : "delta-pos") : ""; }
+
+function renderRecap(section, rc) {
+  const box = document.createElement("div");
+  box.className = "recap-block";
+
+  const h2 = document.createElement("h2");
+  h2.className = "recap-title";
+  h2.textContent = "Récapitulatif " + rc.quad + " (" + rc.periode + ")";
+  box.appendChild(h2);
+
+  // Heures du quadrimestre
+  if (rc.hours && rc.hours.length) {
+    const h3 = document.createElement("h3");
+    h3.className = "section-title";
+    h3.textContent = "Heures " + rc.quad;
+    box.appendChild(h3);
+    const hasNote = rc.hours.some(r => r.note);
+    const heads = ["Nom", "A faire", "Fait", "Delta", "Delta ÷ 24"].concat(hasNote ? ["Note"] : []);
+    const rows = rc.hours.map(r => {
+      const k = r.key ? ` data-key="${r.key}"` : "";
+      return `<tr${k}><td class="nom">${r.nom}</td>` +
+        `<td class="num">${fmtNum(r.a_faire)}</td><td class="num">${fmtNum(r.fait)}</td>` +
+        `<td class="num ${signClass(r.delta)}">${fmtNum(r.delta)}</td>` +
+        `<td class="num ${signClass(r.delta24)}">${fmtNum(r.delta24)}</td>` +
+        (hasNote ? `<td class="note">${r.note || ""}</td>` : "") + `</tr>`;
+    });
+    box.appendChild(buildTable(heads, rows));
+  }
+
+  // CA : par quadrimestre, puis bilan annuel sur décembre
+  if (rc.ca && rc.ca.length) {
+    const h3 = document.createElement("h3");
+    h3.className = "section-title";
+    h3.textContent = rc.annual ? "Congés annuels (CA) — par quadrimestre et bilan annuel"
+                               : "Congés annuels (CA) — jours pris";
+    box.appendChild(h3);
+    const heads = ["Nom", "%", "A prendre (année)"].concat(rc.quads.map(q => "Pris " + q))
+      .concat([rc.annual ? "Total année" : "Cumul", "Reste"]);
+    const rows = rc.ca.map(r => {
+      const k = r.key ? ` data-key="${r.key}"` : "";
+      return `<tr${k}><td class="nom">${r.nom}</td>` +
+        `<td class="num">${r.pct === null ? "" : r.pct + " %"}</td>` +
+        `<td class="num">${fmtNum(r.a_prendre)}</td>` +
+        r.quads.map(v => `<td class="num">${fmtNum(v)}</td>`).join("") +
+        `<td class="num total">${fmtNum(r.total)}</td>` +
+        `<td class="num ${r.rest !== null && r.rest < 0 ? "delta-neg" : ""}">${fmtNum(r.rest)}</td></tr>`;
+    });
+    box.appendChild(buildTable(heads, rows));
+  }
+
+  section.appendChild(box);
+}
 
 let currentMonth = months[0];
 
