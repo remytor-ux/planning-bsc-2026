@@ -13,6 +13,7 @@ import re
 import sys
 import json
 import unicodedata
+import shutil
 import openpyxl
 from pathlib import Path
 from datetime import datetime
@@ -400,6 +401,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="robots" content="noindex, nofollow">
+<link rel="icon" href="logo.png">
 <title>Planning __YEAR__ Urgences · SMUR · UHCD — CH Bagnols-sur-Cèze</title>
 <style>
   :root {
@@ -416,6 +418,9 @@ HTML_TEMPLATE = """<!DOCTYPE html>
   * { box-sizing: border-box; }
   body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif; background: var(--bg); color: var(--text); }
   header { background: var(--navy); color: #fff; padding: 14px 18px; box-shadow: 0 2px 6px rgba(0,0,0,0.15); }
+  .head-wrap { display: flex; align-items: center; flex-wrap: wrap; gap: 10px 18px; }
+  .logo-box { background: #fff; border-radius: 10px; padding: 5px 12px; display: flex; align-items: center; flex: 0 0 auto; }
+  .logo-box img { height: 46px; width: auto; display: block; }
   header h1 { margin: 0; font-size: 17px; font-weight: 600; display: flex; align-items: center; flex-wrap: wrap; gap: 4px 10px; }
   .year-badge { background: var(--amber); color: #1D2430; font-size: 15px; font-weight: 800; padding: 2px 11px; border-radius: 999px; letter-spacing: 0.03em; }
   header .sub { font-size: 12px; opacity: 0.85; margin-top: 2px; }
@@ -469,9 +474,14 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 </head>
 <body>
 <header>
-  <h1>Planning Urgences · SMUR · UHCD <span class="year-badge">__YEAR__</span></h1>
-  <div class="sub">CH Bagnols-sur-Cèze — planning __YEAR__ — lecture seule</div>
-  <div class="updated">Dernière mise à jour : __GENERATED_AT__</div>
+  <div class="head-wrap">
+    <div class="logo-box"><img src="logo.png" alt="CH Bagnols-sur-Cèze — Urgences · SMUR · UHCD"></div>
+    <div>
+      <h1>Planning Urgences · SMUR · UHCD <span class="year-badge">__YEAR__</span></h1>
+      <div class="sub">CH Bagnols-sur-Cèze — planning __YEAR__ — lecture seule</div>
+      <div class="updated">Dernière mise à jour : __GENERATED_AT__</div>
+    </div>
+  </div>
 </header>
 <div id="stickyTop">
   <nav id="monthNav"></nav>
@@ -760,6 +770,11 @@ def main():
     year = (re.search(r"(20\d\d)", src_name) or [None, ""])[1]
     html = html.replace("__SOURCE_FILE__", src_name).replace("__YEAR__", year)
     html = html.replace("__GENERATED_AT__", datetime.now().strftime("%d/%m/%Y %H:%M"))
+
+    # Logo du service (assets/logo.png) copié à côté de la page
+    logo = Path(__file__).resolve().parent / "assets" / "logo.png"
+    if logo.exists():
+        shutil.copyfile(logo, out_dir / "logo.png")
 
     # Demande aux moteurs de recherche de ne pas référencer la page (le lien reste utilisable)
     (out_dir / "robots.txt").write_text("User-agent: *\nDisallow: /\n", encoding="utf-8")
