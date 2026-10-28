@@ -2,11 +2,11 @@
 # -*- coding: utf-8 -*-
 """
 Génère une page HTML (index.html) reproduisant fidèlement la mise en page du
-fichier BSC_Planning_2026V2.xlsx : grille journalière + tableau horaire récap,
+fichier BSC_Planning_2027.xlsx : grille journalière + tableau horaire récap,
 un onglet par mois, en lecture seule.
 
 Usage :
-    python3 generate_planning_v2.py chemin/vers/BSC_Planning_2026V2.xlsx dossier_sortie/
+    python3 generate_planning.py chemin/vers/BSC_Planning_2027.xlsx dossier_sortie/
 """
 
 import re
@@ -399,7 +399,8 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Planning Urgences · SMUR · UHCD — CH Bagnols-sur-Cèze</title>
+<meta name="robots" content="noindex, nofollow">
+<title>Planning __YEAR__ Urgences · SMUR · UHCD — CH Bagnols-sur-Cèze</title>
 <style>
   :root {
     --navy: #1F3A5F;
@@ -415,7 +416,8 @@ HTML_TEMPLATE = """<!DOCTYPE html>
   * { box-sizing: border-box; }
   body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif; background: var(--bg); color: var(--text); }
   header { background: var(--navy); color: #fff; padding: 14px 18px; box-shadow: 0 2px 6px rgba(0,0,0,0.15); }
-  header h1 { margin: 0; font-size: 17px; font-weight: 600; }
+  header h1 { margin: 0; font-size: 17px; font-weight: 600; display: flex; align-items: center; flex-wrap: wrap; gap: 4px 10px; }
+  .year-badge { background: var(--amber); color: #1D2430; font-size: 15px; font-weight: 800; padding: 2px 11px; border-radius: 999px; letter-spacing: 0.03em; }
   header .sub { font-size: 12px; opacity: 0.85; margin-top: 2px; }
   header .updated { font-size: 11px; opacity: 0.7; margin-top: 4px; }
   #stickyTop { position: sticky; top: 0; z-index: 20; background: #fff; box-shadow: 0 2px 6px rgba(0,0,0,0.12); }
@@ -467,8 +469,8 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 </head>
 <body>
 <header>
-  <h1>Planning Urgences · SMUR · UHCD</h1>
-  <div class="sub">CH Bagnols-sur-Cèze — lecture seule</div>
+  <h1>Planning Urgences · SMUR · UHCD <span class="year-badge">__YEAR__</span></h1>
+  <div class="sub">CH Bagnols-sur-Cèze — planning __YEAR__ — lecture seule</div>
   <div class="updated">Dernière mise à jour : __GENERATED_AT__</div>
 </header>
 <div id="stickyTop">
@@ -481,7 +483,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
   </div>
 </div>
 <main id="monthContainer"></main>
-<footer>Généré automatiquement depuis BSC_Planning_2026V2.xlsx — contactez Dr Torregrossa pour toute correction.</footer>
+<footer>Généré automatiquement depuis __SOURCE_FILE__ — contactez Dr Torregrossa pour toute correction.</footer>
 
 <script>
 const DATA = __DATA_JSON__;
@@ -743,7 +745,7 @@ function applySelection() {
 
 def main():
     if len(sys.argv) < 2:
-        print("Usage: python3 generate_planning_v2.py <fichier.xlsx> [dossier_sortie]")
+        print("Usage: python3 generate_planning.py <fichier.xlsx> [dossier_sortie]")
         sys.exit(1)
     xlsx_path = sys.argv[1]
     out_dir = Path(sys.argv[2]) if len(sys.argv) > 2 else Path(".")
@@ -754,7 +756,13 @@ def main():
     html = html.replace("__DATA_JSON__", json.dumps(data, ensure_ascii=False))
     html = html.replace("__HOURS_HEADERS_JSON__", json.dumps([], ensure_ascii=False))
     html = html.replace("__PEOPLE_JSON__", json.dumps(build_people(data), ensure_ascii=False))
+    src_name = Path(xlsx_path).name
+    year = (re.search(r"(20\d\d)", src_name) or [None, ""])[1]
+    html = html.replace("__SOURCE_FILE__", src_name).replace("__YEAR__", year)
     html = html.replace("__GENERATED_AT__", datetime.now().strftime("%d/%m/%Y %H:%M"))
+
+    # Demande aux moteurs de recherche de ne pas référencer la page (le lien reste utilisable)
+    (out_dir / "robots.txt").write_text("User-agent: *\nDisallow: /\n", encoding="utf-8")
 
     out_file = out_dir / "index.html"
     out_file.write_text(html, encoding="utf-8")

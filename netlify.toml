@@ -1,6 +1,12 @@
 [build]
-  command = "pip install -r requirements.txt && python3 generate_planning.py data/BSC_Planning_2026V2.xlsx ."
-  publish = "."
+  command = "pip install -r requirements.txt && python3 generate_planning.py data/BSC_Planning_2026V2.xlsx public"
+  publish = "public"
 
 [build.environment]
   PYTHON_VERSION = "3.11"
+
+# Demande aux moteurs de recherche de ne pas référencer le site
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Robots-Tag = "noindex, nofollow"
