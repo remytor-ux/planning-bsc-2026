@@ -113,14 +113,19 @@ def parse_month_sheet(ws):
     group_row = [ws.cell(row=2, column=c).value for c in range(1, 26)]
     label_row = [ws.cell(row=3, column=c).value for c in range(1, 26)]
 
-    # Reconstruit le groupe courant pour chaque colonne (les groupes sont fusionnés,
-    # donc seule la première colonne du groupe porte la valeur -> on la propage).
-    current_group = None
+    # Groupe de chaque colonne = plage FUSIONNÉE de la ligne 2 dans l'Excel
+    # (ex. "LIGNE 2" = F2:G2 seulement). Une cellule non fusionnée ne couvre que
+    # sa propre colonne ; les colonnes hors groupe restent sans libellé.
+    merged_group = {}
+    for rng in ws.merged_cells.ranges:
+        if rng.min_row <= 2 <= rng.max_row:
+            label = ws.cell(row=2, column=rng.min_col).value
+            for col in range(rng.min_col, rng.max_col + 1):
+                merged_group[col] = label
     groups = []
-    for v in group_row:
-        if v:
-            current_group = str(v).strip()
-        groups.append(current_group)
+    for i, v in enumerate(group_row, start=1):
+        g = merged_group.get(i, v)
+        groups.append(str(g).strip() if g else None)
 
     day_columns = []
     for idx in range(2, len(label_row)):  # colonnes C (index 2, 0-based) et suivantes
@@ -132,7 +137,7 @@ def parse_month_sheet(ws):
         day_columns.append({
             "col": col,
             "label": label_clean,
-            "group": groups[idx] or "AUTRES",
+            "group": groups[idx] or "",
             "color": color_for_label(label_clean),
         })
 
