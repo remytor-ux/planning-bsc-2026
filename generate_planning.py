@@ -420,6 +420,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     --muted: #6B7280;
     --border: #DADFE5;
   }
+  :root { --w-jour: 82px; --w-date: 54px; }
   * { box-sizing: border-box; }
   body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif; background: var(--bg); color: var(--text); }
   header { background: var(--navy); color: #fff; padding: 14px 18px; box-shadow: 0 2px 6px rgba(0,0,0,0.15); }
@@ -450,6 +451,38 @@ HTML_TEMPLATE = """<!DOCTYPE html>
   .poste.vacant { background: #1D2430; color: #fff; font-weight: 700; border: 2px solid #8B1E2B; }
   tr.row-vacant td { background: #FBEAEA !important; }
   tr.row-vacant td.jour-cell, tr.row-vacant td.date-cell { background: #F6D9D9 !important; box-shadow: inset 4px 0 0 #8B1E2B; }
+  /* Grille journalière : colonnes Jour/Date figées à gauche ; en-têtes recopiés sous la barre du haut (#floatHead) */
+  table.day-grid { border-collapse: separate; border-spacing: 0; }
+  table.day-grid thead th { position: static; border: 0; border-right: 1px solid rgba(255,255,255,0.18); border-bottom: 1px solid rgba(255,255,255,0.18); }
+  table.day-grid thead tr.group-row th { height: 26px; padding-top: 0; padding-bottom: 0; opacity: 1; background: #16293f; }
+  table.day-grid tbody td { border: 0; border-right: 1px solid var(--border); border-bottom: 1px solid var(--border); }
+  table.day-grid td.jour-cell { position: sticky; left: 0; z-index: 2; width: var(--w-jour); min-width: var(--w-jour); max-width: var(--w-jour); }
+  table.day-grid td.date-cell { position: sticky; left: var(--w-jour); z-index: 2; width: var(--w-date); min-width: var(--w-date); border-right: 2px solid #C5CCD6; }
+  table.day-grid thead th.c-jour, table.day-grid thead th.c-corner { position: sticky; left: 0; z-index: 5; }
+  table.day-grid thead th.c-date { position: sticky; left: var(--w-jour); z-index: 5; border-right: 2px solid rgba(255,255,255,0.4); }
+  #floatHead { position: absolute; left: 0; right: 0; top: 100%; overflow: hidden; background: var(--navy); box-shadow: 0 3px 6px rgba(0,0,0,0.18); }
+  #floatHead[hidden] { display: none; }
+  #floatHead table.day-grid { table-layout: fixed; margin: 0; min-width: 0; }
+  .jf { display: inline; } .js { display: none; }
+  @media (max-width: 640px) {
+    :root { --w-jour: 40px; --w-date: 48px; }
+    .jf { display: none; } .js { display: inline; }
+    table.day-grid td.jour-cell, table.day-grid td.date-cell { padding: 5px 4px; font-size: 11.5px; }
+    table.day-grid thead th { font-size: 11.5px; padding: 5px 6px; }
+    table.day-grid thead th.c-jour, table.day-grid thead th.c-date { padding: 6px 4px; }
+    .logo-box img { height: 38px; }
+    main { padding: 6px; }
+    .pl-long, .pdf-court { display: none; }
+    .pl-short { display: inline; }
+    a.pdf-btn { padding: 6px 12px; }
+    #filterBar { gap: 6px 8px; padding: 6px 10px; }
+  }
+  .pdf-links { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+  .pdf-links[hidden] { display: none; }
+  .pdf-label { font-size: 12px; font-weight: 600; color: var(--navy); }
+  .pl-short { display: none; }
+  a.pdf-btn { font-size: 12.5px; font-weight: 600; padding: 6px 10px; border: 1px solid var(--navy); border-radius: 6px; background: #fff; color: var(--navy); text-decoration: none; white-space: nowrap; }
+  a.pdf-btn:active, a.pdf-btn:hover { background: var(--navy); color: #fff; }
   h2.month-title { font-size: 14px; color: var(--navy); margin: 4px 4px 8px; }
   h3.section-title { font-size: 13px; color: var(--navy); margin: 4px 4px 8px; }
   .hours-table td.nom { text-align: left; font-weight: 600; }
@@ -469,7 +502,8 @@ HTML_TEMPLATE = """<!DOCTYPE html>
   #docSelect { font-size: 14px; padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px; background: #fff; color: var(--text); min-width: 190px; max-width: 100%; }
   #clearSel { font-size: 12px; padding: 6px 10px; border: 1px solid var(--border); border-radius: 6px; background: #fff; color: var(--navy); cursor: pointer; }
   #selCount { font-size: 12.5px; color: var(--text); font-weight: 600; }
-  body.has-sel tbody tr[data-names]:not(.sel-hit) { opacity: 0.38; }
+  body.has-sel tbody tr[data-names]:not(.sel-hit) td:not(.jour-cell):not(.date-cell) { opacity: 0.38; }
+  body.has-sel tbody tr[data-names]:not(.sel-hit) td.jour-cell, body.has-sel tbody tr[data-names]:not(.sel-hit) td.date-cell { color: #A3A9B3; }
   tr.sel-hit td { background: #FFF1BF !important; }
   tr.sel-hit td.jour-cell, tr.sel-hit td.date-cell { background: #F2B705 !important; color: #1D2430; font-weight: 700; box-shadow: inset 5px 0 0 var(--navy) !important; }
   .poste.sel-chip { box-shadow: 0 0 0 2px #fff, 0 0 0 4px var(--navy); font-weight: 700; }
@@ -495,7 +529,9 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     <select id="docSelect"><option value="">— Tous —</option></select>
     <button id="clearSel" type="button" hidden>✕ Effacer</button>
     <span id="selCount"></span>
+    <span id="pdfLinks" class="pdf-links" hidden></span>
   </div>
+  <div id="floatHead" hidden></div>
 </div>
 <main id="monthContainer"></main>
 <footer>Généré automatiquement depuis __SOURCE_FILE__ — contactez Dr Torregrossa pour toute correction.</footer>
@@ -504,6 +540,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 const DATA = __DATA_JSON__;
 const HOURS_HEADERS = __HOURS_HEADERS_JSON__;
 const PEOPLE = __PEOPLE_JSON__;
+const PDFS = __PDF_JSON__;
 let selected = "";
 const MONTH_FR = {FEVRIER: "Février", AOUT: "Août", DECEMBRE: "Décembre"};
 
@@ -540,20 +577,23 @@ months.forEach((month, idx) => {
   // --- Grille journalière ---
   const dayColumns = DATA[month].columns;
   const wrap1 = document.createElement("div");
-  wrap1.className = "table-wrap";
+  wrap1.className = "table-wrap grid-scroll";
+  wrap1.addEventListener("scroll", updateFloat, {passive: true});
   const table = document.createElement("table");
+  table.className = "day-grid";
 
   const thead = document.createElement("thead");
   const groupRow = document.createElement("tr");
   groupRow.className = "group-row";
-  groupRow.innerHTML = "<th colspan='2'></th>";
+  groupRow.innerHTML = "<th colspan='2' class='c-corner'></th>";
   groupSpans(dayColumns).forEach(g => {
     groupRow.innerHTML += `<th colspan="${g.span}">${g.group}</th>`;
   });
   thead.appendChild(groupRow);
 
   const headRow = document.createElement("tr");
-  headRow.innerHTML = "<th>Jour</th><th>Date</th>" + dayColumns.map(c => `<th>${c.label}</th>`).join("");
+  headRow.className = "label-row";
+  headRow.innerHTML = "<th class='c-jour'>Jour</th><th class='c-date'>Date</th>" + dayColumns.map(c => `<th>${c.label}</th>`).join("");
   thead.appendChild(headRow);
   table.appendChild(thead);
 
@@ -569,7 +609,7 @@ months.forEach((month, idx) => {
     } else if (day.jour === "Samedi" || day.jour === "Dimanche") {
       tr.className = "we";
     }
-    let rowHtml = `<td class="jour-cell">${day.jour || ""}</td><td class="date-cell">${day.date || ""}</td>`;
+    let rowHtml = `<td class="jour-cell"><span class="jf">${day.jour || ""}</span><span class="js">${(day.jour || "").slice(0, 3)}</span></td><td class="date-cell">${day.date || ""}</td>`;
     dayColumns.forEach(c => {
       const cell = day.cells[c.col];
       if (cell && cell.val) {
@@ -696,12 +736,14 @@ function renderRecap(section, rc) {
 }
 
 let currentMonth = months[0];
+window.addEventListener("load", buildFloat);
 
 function showMonth(month) {
   currentMonth = month;
   document.querySelectorAll("#monthNav button").forEach(b => b.classList.toggle("active", b.dataset.month === month));
   document.querySelectorAll(".month").forEach(s => s.classList.toggle("active", s.id === "month-" + month));
   updateCount();
+  buildFloat();
 }
 
 function monthLabel(m) { return MONTH_FR[m] || (m.charAt(0) + m.slice(1).toLowerCase()); }
@@ -716,6 +758,57 @@ function updateCount() {
     : n + (n > 1 ? " jours" : " jour") + " en " + monthLabel(currentMonth);
 }
 
+function renderPdfLinks() {
+  const el = document.getElementById("pdfLinks");
+  const links = selected && PDFS[selected];
+  if (!links || !Object.keys(links).length) { el.hidden = true; el.innerHTML = ""; return; }
+  el.hidden = false;
+  el.innerHTML = '<span class="pdf-label"><span class="pl-long">Mon planning en PDF :</span><span class="pl-short">PDF :</span></span>' +
+    Object.keys(links).map(q =>
+      `<a class="pdf-btn" href="${links[q].url}" download>${q}<span class="pdf-court"> · ${links[q].court}</span></a>`).join("");
+}
+
+// En-têtes flottants : quand la ligne d'en-têtes de la grille sort de l'écran, une copie se fixe sous
+// la barre du haut (suit le défilement horizontal), pour garder visibles le poste et le groupe.
+function activeGrid() {
+  const wrap = document.querySelector(".month.active .grid-scroll");
+  return wrap ? {wrap, table: wrap.querySelector("table.day-grid")} : null;
+}
+
+function buildFloat() {
+  const fh = document.getElementById("floatHead");
+  const g = activeGrid();
+  fh.innerHTML = "";
+  if (!g) return;
+  const t = document.createElement("table");
+  t.className = "day-grid";
+  const cg = document.createElement("colgroup");
+  Array.from(g.table.tHead.rows[1].cells).forEach(th => {
+    const c = document.createElement("col");
+    c.style.width = th.getBoundingClientRect().width + "px";
+    cg.appendChild(c);
+  });
+  t.appendChild(cg);
+  t.appendChild(g.table.tHead.cloneNode(true));
+  t.style.width = g.table.getBoundingClientRect().width + "px";
+  fh.appendChild(t);
+  updateFloat();
+}
+
+function updateFloat() {
+  const fh = document.getElementById("floatHead");
+  const g = activeGrid();
+  if (!g || !fh.firstChild) { fh.hidden = true; return; }
+  const barBottom = document.getElementById("stickyTop").getBoundingClientRect().bottom;
+  const headBottom = g.table.tHead.getBoundingClientRect().bottom;
+  const tableBottom = g.table.getBoundingClientRect().bottom;
+  fh.hidden = !(headBottom < barBottom && tableBottom > barBottom + 50);
+  if (!fh.hidden) fh.scrollLeft = g.wrap.scrollLeft;
+}
+window.addEventListener("scroll", updateFloat, {passive: true});
+let resizeTimer = null;
+window.addEventListener("resize", () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(buildFloat, 150); });
+
 function applySelection() {
   document.body.classList.toggle("has-sel", !!selected);
   document.querySelectorAll("tbody tr[data-names]").forEach(tr => {
@@ -729,6 +822,8 @@ function applySelection() {
   document.getElementById("clearSel").hidden = !selected;
   document.getElementById("docSelect").value = selected;
   updateCount();
+  renderPdfLinks();
+  updateFloat();
   try { history.replaceState(null, "", selected ? "#med=" + encodeURIComponent(selected) : location.pathname + location.search); } catch (e) {}
 }
 
@@ -767,17 +862,29 @@ def main():
     out_dir.mkdir(parents=True, exist_ok=True)
 
     data = build_data(xlsx_path)
+    people = build_people(data)
+    src_name = Path(xlsx_path).name
+    year = (re.search(r"(20\d\d)", src_name) or [None, ""])[1]
+    logo = Path(__file__).resolve().parent / "assets" / "logo.png"
+
+    # PDF individuels par quadrimestre (liens affichés quand un médecin est sélectionné)
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    try:
+        from planning_pdf import build_pdfs
+        pdfs = build_pdfs(data, people, out_dir, year, src_name, logo)
+    except Exception as exc:  # un souci de PDF ne doit jamais empêcher la mise en ligne de la page
+        print(f"ATTENTION : PDF non générés ({exc})")
+        pdfs = {}
+
     html = HTML_TEMPLATE
     html = html.replace("__DATA_JSON__", json.dumps(data, ensure_ascii=False))
     html = html.replace("__HOURS_HEADERS_JSON__", json.dumps([], ensure_ascii=False))
-    html = html.replace("__PEOPLE_JSON__", json.dumps(build_people(data), ensure_ascii=False))
-    src_name = Path(xlsx_path).name
-    year = (re.search(r"(20\d\d)", src_name) or [None, ""])[1]
+    html = html.replace("__PEOPLE_JSON__", json.dumps(people, ensure_ascii=False))
+    html = html.replace("__PDF_JSON__", json.dumps(pdfs, ensure_ascii=False))
     html = html.replace("__SOURCE_FILE__", src_name).replace("__YEAR__", year)
     html = html.replace("__GENERATED_AT__", datetime.now().strftime("%d/%m/%Y %H:%M"))
 
     # Logo du service (assets/logo.png) copié à côté de la page
-    logo = Path(__file__).resolve().parent / "assets" / "logo.png"
     if logo.exists():
         shutil.copyfile(logo, out_dir / "logo.png")
 
