@@ -981,6 +981,14 @@ def main():
     except Exception as exc:
         print(f"ATTENTION : planning-data.json non généré ({exc})")
 
+    # Agendas individuels (.ics) auxquels les médecins s'abonnent depuis leur téléphone
+    try:
+        from export_ics import export_ics
+        done = export_ics(compact["data"], year, out_dir)
+        print(f"OK -> {len(done)} agendas .ics dans {out_dir / 'ics'}")
+    except Exception as exc:
+        print(f"ATTENTION : agendas .ics non générés ({exc})")
+
 
 if __name__ == "__main__":
     main()

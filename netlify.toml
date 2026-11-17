@@ -17,3 +17,11 @@
   [headers.values]
     Access-Control-Allow-Origin = "*"
     Cache-Control = "no-cache"
+
+# Agendas individuels (.ics) : abonnement depuis un téléphone / lecture depuis l'outil
+[[headers]]
+  for = "/ics/*"
+  [headers.values]
+    Content-Type = "text/calendar; charset=utf-8"
+    Access-Control-Allow-Origin = "*"
+    Cache-Control = "no-cache"
