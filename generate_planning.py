@@ -853,6 +853,77 @@ function applySelection() {
 """
 
 
+# ---------------------------------------------------------------------------
+# Export compact des données (planning-data.json) : lu par l'application
+# « Outils Médecin » pour afficher à chaque médecin son propre planning.
+# Les postes sont identifiés par leur NOM (et non par leur position de colonne,
+# qui varie d'un mois à l'autre dans le fichier Excel).
+# ---------------------------------------------------------------------------
+COMPACT_CODES = {
+    "L1J": "a", "L1N": "b", "12H": "c", "L2J": "d", "L2N": "e",
+    "FFIJ": "f", "FFIN": "g", "FFI24": "h", "UHCD": "i", "USC": "j",
+    "RUF": "k", "DPI": "l", "CA": "m", "INDISPO": "n", "FORM": "o", "AT": "p",
+}
+
+
+def _compact_code(group, label):
+    """Code d'une colonne (lettre) à partir de son groupe et de son libellé, ou None."""
+    lab = re.sub(r"\s+", " ", _norm(label or "")).upper().strip()
+    grp = re.sub(r"\s+", " ", _norm(group or "")).upper().strip()
+    if not lab:
+        return None
+    if lab == "9H00-19H00":
+        return COMPACT_CODES["L1J"] if grp == "LIGNE 1" else COMPACT_CODES["L2J"] if grp == "LIGNE 2" else None
+    if lab == "19H00-9H00":
+        return COMPACT_CODES["L1N"] if grp == "LIGNE 1" else COMPACT_CODES["L2N"] if grp == "LIGNE 2" else None
+    if lab == "9H00-21H00":
+        return COMPACT_CODES["12H"]
+    for needle, key in (("UHCD", "UHCD"), ("USC", "USC"), ("RUF", "RUF"), ("DPI", "DPI")):
+        if needle in lab:
+            return COMPACT_CODES[key]
+    if "FFI" in lab or "INTERNE" in lab:
+        if "JOUR" in lab:
+            return COMPACT_CODES["FFIJ"]
+        if "NUIT" in lab:
+            return COMPACT_CODES["FFIN"]
+        return COMPACT_CODES["FFI24"]
+    if lab == "CA":
+        return COMPACT_CODES["CA"]
+    if lab == "INDISPO":
+        return COMPACT_CODES["INDISPO"]
+    if lab.startswith("FORMATION"):
+        return COMPACT_CODES["FORM"]
+    if lab == "AT":
+        return COMPACT_CODES["AT"]
+    return None
+
+
+def build_compact(data, year):
+    """{ nom : "AAMMJJ<codes> AAMMJJ<codes> ..." } pour chaque personne citée dans le planning."""
+    out = {}
+    for sheet, month in data.items():
+        colcode = {}
+        for c in month["columns"]:
+            code = _compact_code(c.get("group"), c.get("label"))
+            if code:
+                colcode[int(c["col"])] = code
+        for day in month["days"]:
+            dd, mm = day["date"].split("/")
+            y = int(year)
+            if sheet == "DECEMBRE" and mm == "01":
+                y += 1          # fin de planning : début janvier de l'année suivante
+            elif sheet == "JANVIER" and mm == "12":
+                y -= 1          # début de planning : fin décembre de l'année précédente
+            key = "%02d%s%s" % (y % 100, mm, dd)
+            for col, cell in day["cells"].items():
+                code = colcode.get(int(col))
+                if not cell or not code:
+                    continue
+                for n in cell.get("names", []):
+                    out.setdefault(n, {}).setdefault(key, set()).add(code)
+    return {n: " ".join(k + "".join(sorted(v)) for k, v in sorted(d.items())) for n, d in sorted(out.items())}
+
+
 def main():
     if len(sys.argv) < 2:
         print("Usage: python3 generate_planning.py <fichier.xlsx> [dossier_sortie]")
@@ -894,6 +965,21 @@ def main():
     out_file = out_dir / "index.html"
     out_file.write_text(html, encoding="utf-8")
     print(f"OK -> {out_file}")
+
+    # Données compactes pour l'application « Outils Médecin » (ne doit jamais bloquer la mise en ligne)
+    try:
+        from datetime import timezone
+        compact = {
+            "version": 1,
+            "year": year,
+            "generated": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "data": build_compact(data, year),
+        }
+        (out_dir / "planning-data.json").write_text(
+            json.dumps(compact, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+        print(f"OK -> {out_dir / 'planning-data.json'}")
+    except Exception as exc:
+        print(f"ATTENTION : planning-data.json non généré ({exc})")
 
 
 if __name__ == "__main__":

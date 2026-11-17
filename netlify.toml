@@ -10,3 +10,10 @@
   for = "/*"
   [headers.values]
     X-Robots-Tag = "noindex, nofollow"
+
+# Données du planning lues par l'application « Outils Médecin » (autorise la lecture depuis un autre site)
+[[headers]]
+  for = "/planning-data.json"
+  [headers.values]
+    Access-Control-Allow-Origin = "*"
+    Cache-Control = "no-cache"
